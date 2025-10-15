@@ -49,27 +49,34 @@ class VectorSearchTool:
         # Hint: Use the 'or' operator to fallback to parameters if env var is not set
         # Example: self.qdrant_url = qdrant_url or os.getenv("QDRANT_URL")
         
-        self.qdrant_url = None  # TODO: Replace with actual implementation
-        self.qdrant_api_key = None  # TODO: Replace with actual implementation
+        self.qdrant_url = os.getenv("QDRANT_URL")  # TODO: Replace with actual implementation
+        self.qdrant_api_key = os.getenv("QDRANT_API_KEY")  # TODO: Replace with actual implementation
         
         # TODO 2: Validate that both URL and API key are provided
         # Hint: Check if either is None or empty, then raise ValueError
         # Hint: Use an if statement to check: if not self.qdrant_url or not self.qdrant_api_key:
         
+       
         # TODO: Add validation here
-        
+        if not self.qdrant_url or not self.qdrant_api_key:
+            raise ValueError("QDRANT_URL and QDRANT_API_KEY environment variables must be set")
+
         # TODO 3: Initialize the Qdrant client
         # Hint: Create a QdrantClient instance with url and api_key parameters
         # Example: self.qdrant_client = QdrantClient(url=..., api_key=...)
         
-        self.qdrant_client = None  # TODO: Replace with actual QdrantClient initialization
-        
+        #self.qdrant_client = None  # TODO: Replace with actual QdrantClient initialization
+        self.qdrant_client = QdrantClient(
+            url=self.qdrant_url,
+            api_key=self.qdrant_api_key,
+        )
+
         # TODO 4: Set collection name and model name with defaults
         # Hint: Use the same pattern as above - use provided value or default
         # Default collection_name: "fed_speeches"
         # Default model_name is already set in the function signature
         
-        self.collection_name = None  # TODO: Replace with actual implementation
+        self.collection_name = "fed_speeches"  # TODO: Replace with actual implementation
         self.model_name = model_name
 
     def search(self, query: str, limit: int = 5) -> list[dict]:
@@ -94,18 +101,37 @@ class VectorSearchTool:
         # Hint: The result has a .points attribute that contains the list of results
         # Example: results = self.qdrant_client.query_points(...).points
         
-        search_results = []  # TODO: Replace with actual query_points call
+        #search_results = []  # TODO: Replace with actual query_points call
+        search_results = self.qdrant_client.query_points(
+            collection_name=self.collection_name,
+            query=models.Document(text=query, model=self.model_name),
+            limit=limit
+        ).points 
         
         # TODO 6: Format results into a list of dictionaries
         # Hint: Loop through search_results and extract information
         # Hint: Each result has .payload (dict) and .score (float) attributes
         # Hint: Use result.payload.get("key", "") to safely get values with defaults
-        
+
         formatted_results = []
         # TODO: Add your loop here to format results
         # Each formatted result should be a dict with keys: "content", "metadata", "score"
         # metadata should include: title, speaker, pub_date, category, url, description
-        
+        for result in search_results:               
+            formatted_result = {
+                "content": result.payload.get("content", ""),
+                "metadata": {
+                    "title": result.payload.get("title", "N/A"),
+                    "speaker": result.payload.get("speaker", "N/A"),
+                    "pub_date": result.payload.get("pub_date", "N/A"),
+                    "category": result.payload.get("category", "N/A"),
+                    "url": result.payload.get("url", "N/A"),
+                    "description": result.payload.get("description", "N/A"),
+                },
+                "score": result.score
+            }
+            formatted_results.append(formatted_result)    
+
         return formatted_results
 
     def verify_collection(self) -> dict:
@@ -125,12 +151,19 @@ class VectorSearchTool:
             # TODO: Call get_collection and extract info
             # collection_info = ...
             # Return dict with: exists, points_count, vector_size, distance
+            collection_info = self.qdrant_client.get_collection(self.collection_name)
+            return {
+                "exists": True,
+                "points_count": collection_info.points_count,
+                "vector_size": collection_info.config.params.vectors.size,  
+                "distance": collection_info.config.params.vectors.distance
+            }     
             pass
         except Exception as e:
             # TODO: Return error dict
-            return {
-                "exists": False,
-                "error": str(e)
+            return {                
+                "exists": False,    
+                "error": str(e) 
             }
 
 
@@ -154,23 +187,37 @@ def search_knowledge_base(query: str, limit: int = 5) -> str:
     
     try:
         # TODO: Create VectorSearchTool instance
-        # tool = VectorSearchTool()
-        
+        tool = VectorSearchTool()
+
         # TODO: Perform search
-        # results = tool.search(query, limit=limit)
-        
+        results = tool.search(query, limit=limit)
+
         # TODO: Check if results are empty
-        # if not results:
-        #     return f"No results found for query: '{query}'"
-        
+        if not results:
+            return f"No results found for query: '{query}'"
+
         # TODO: Format results as a readable string
         # Include: number of documents, and for each result:
         #   - Result number and score
         #   - Title, Speaker, Date, Category
         #   - Content snippet (first 300 characters)
         
-        return "TODO: Implement search_knowledge_base"
+        output_lines = [f"Found {len(results)} document(s) for query: '{query}'\n"]
         
+        for idx, result in enumerate(results, 1):
+            meta = result["metadata"]
+            content_snippet = result["content"][:300].replace('\n', ' ')
+            output_lines.append(
+                f"🏆 Result #{idx}\n"
+                f"Score:     {result['score']:.4f}\n"
+                f"Title:     {meta.get('title', 'N/A')}\n"
+                f"Speaker:   {meta.get('speaker', 'N/A')}\n"
+                f"Date:      {meta.get('pub_date', 'N/A')}\n"
+                f"Category:  {meta.get('category', 'N/A')}\n"
+                f"Snippet:   {content_snippet}\n"
+                f"{'─'*60}\n"
+            )
+        return '\n'.join(output_lines)
     except Exception as e:
         return f"Error searching knowledge base: {str(e)}"
 
